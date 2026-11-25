@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Easy Einwendung 
- * Plugin URI: https://github.com/Pengsquare/Easy-Einwendung
+ * Plugin URI: https://github.com/cmsqrt/Easy-Einwendung
  * Description: Einfache Einwendungen per Textbausteine pflegen und von Nutzenden als E-Mail/PDF Dokument zusammenstellen lassen.
- * Version: 0.5.2
- * Author: Pengsquare UG (haftungsbeschränkt)
+ * Version: 0.6.0
+ * Author: CMSQRT, Pengsquare UG (haftungsbeschränkt) i.L.
  * License: GNUGPLv3
  * License URI: https://www.gnu.org/licenses/gpl-3.0
  */
@@ -55,13 +55,13 @@ function som_render_meta_box($post)
 
     echo '<hr>';
 
-    echo '<p><strong>Verfügbar für diese Empfänger:</strong><br>';
+    echo '<p><strong>Verfügbar für diese Empfänger:innen:</strong><br>';
     echo '<span class="description" style="font-size:11px;">Keine Auswahl = Für alle verfügbar.</span></p>';
     
     $targets = get_option('som_targets');
     if (!is_array($targets) || empty($targets)) 
     {
-        echo '<p style="color:red">Bitte erst Empfänger in den Einstellungen anlegen.</p>';
+        echo '<p style="color:red">Bitte erst Empfänger:in in den Einstellungen anlegen.</p>';
     } 
     else 
     {
@@ -70,7 +70,7 @@ function som_render_meta_box($post)
 
         foreach($targets as $index => $t) 
         {
-            $label = !empty($t['label']) ? $t['label'] : 'Empfänger #' . ($index+1);
+            $label = !empty($t['label']) ? $t['label'] : 'Empfänger:in #' . ($index+1);
             $checked = in_array((string)$index, $assigned) ? 'checked' : '';
             echo '<label><input type="checkbox" name="som_assigned_targets[]" value="' . $index . '" ' . $checked . '> ' . esc_html($label) . '</label><br>';
         }
@@ -100,6 +100,24 @@ add_action('save_post', 'som_save_meta_box');
 function som_add_admin_menu() { add_submenu_page('edit.php?post_type=som_mail_block', 'Einwendungen Einstellungen', 'Einstellungen', 'manage_options', 'som-settings', 'som_options_page_html'); }
 add_action('admin_menu', 'som_add_admin_menu');
 
+function som_get_default_texts() 
+{
+    return array(
+        'som_title_topic_section' => 'Themenauswahl zur Einwendung',
+        'som_title_button_mail'   => 'Einwendung als E-Mail Entwurf',
+        'som_title_button_pdf'    => 'Einwendung als PDF Dokument',
+    );
+}
+
+function som_get_text_option($option_name) 
+{
+    $defaults = som_get_default_texts();
+    $default  = isset($defaults[$option_name]) ? $defaults[$option_name] : '';
+    $value    = get_option($option_name, '');
+
+    return (is_string($value) && trim($value) !== '') ? $value : $default;
+}
+
 function som_settings_init() 
 { 
     register_setting('som_plugin_options', 'som_targets'); 
@@ -110,8 +128,20 @@ function som_settings_init()
     register_setting('som_plugin_options', 'som_dload_mail_disabled');
     register_setting('som_plugin_options', 'som_dload_pdf_disabled');
 
+    register_setting('som_plugin_options', 'som_addr_optional');
     register_setting('som_plugin_options', 'som_email_optional');
     register_setting('som_plugin_options', 'som_enable_free_text');
+
+    foreach (som_get_default_texts() as $option_name => $default_value) 
+    {
+        register_setting('som_plugin_options', $option_name, array(
+            'default'           => $default_value,
+            'sanitize_callback' => function($value) use ($default_value) {
+                $clean = is_string($value) ? sanitize_text_field($value) : '';
+                return ($clean !== '') ? $clean : $default_value;
+            },
+        ));
+    }
 
     register_setting('som_plugin_options', 'som_btn_mail_bg', array('sanitize_callback' => 'sanitize_hex_color'));
     register_setting('som_plugin_options', 'som_btn_pdf_bg', array('sanitize_callback' => 'sanitize_hex_color'));
@@ -128,22 +158,25 @@ function som_handle_export()
     if (!current_user_can('manage_options')) return;
 
     $data = array(
-        'settings' => 
-        array(
-            'som_targets'         => get_option('som_targets'),
-            'som_email_optional'  => get_option('som_email_optional'),
-            'som_enable_free_text' => get_option('som_enable_free_text'),
+        'settings' => array(
+            'som_targets'             => get_option('som_targets'),
+            'som_email_optional'      => get_option('som_email_optional'),
+            'som_addr_optional'       => get_option('som_addr_optional'),
+            'som_enable_free_text'    => get_option('som_enable_free_text'),
             'som_dload_mail_disabled' => get_option('som_dload_mail_disabled'),
-            'som_dload_pdf_disabled' => get_option('som_dload_pdf_disabled'),
-            'som_cc_email'        => get_option('som_cc_email'),
-            'som_intro_text'      => get_option('som_intro_text'),
-            'som_footer_text'     => get_option('som_footer_text'),
-            'som_btn_mail_bg'     => get_option('som_btn_mail_bg'),
-            'som_btn_pdf_bg'      => get_option('som_btn_pdf_bg'),
-            'som_sel_ind_bg'      => get_option('som_sel_ind_bg'),
-            'som_btn_mail_col'     => get_option('som_btn_mail_col'),
-            'som_btn_pdf_col'      => get_option('som_btn_pdf_col'),
-            'som_sel_ind_col'      => get_option('som_sel_ind_col'),
+            'som_dload_pdf_disabled'  => get_option('som_dload_pdf_disabled'),
+            'som_cc_email'            => get_option('som_cc_email'),
+            'som_intro_text'          => get_option('som_intro_text'),
+            'som_footer_text'         => get_option('som_footer_text'),
+            'som_title_topic_section' => som_get_text_option('som_title_topic_section'),
+            'som_title_button_mail'   => som_get_text_option('som_title_button_mail'),
+            'som_title_button_pdf'    => som_get_text_option('som_title_button_pdf'),
+            'som_btn_mail_bg'         => get_option('som_btn_mail_bg'),
+            'som_btn_pdf_bg'          => get_option('som_btn_pdf_bg'),
+            'som_sel_ind_bg'          => get_option('som_sel_ind_bg'),
+            'som_btn_mail_col'        => get_option('som_btn_mail_col'),
+            'som_btn_pdf_col'         => get_option('som_btn_pdf_col'),
+            'som_sel_ind_col'         => get_option('som_sel_ind_col'),
         ),
         'groups' => array(),
         'blocks' => array()
@@ -184,7 +217,43 @@ function som_handle_import()
     $data = json_decode($json, true);
     if (!$data || !is_array($data)) { wp_die('Invalid JSON file.'); }
 
-    if (!empty($data['settings'])) { foreach ($data['settings'] as $key => $val) { update_option($key, $val); } }
+    $allowed_settings = array(
+        'som_targets',
+        'som_email_optional',
+        'som_addr_optional',
+        'som_enable_free_text',
+        'som_dload_mail_disabled',
+        'som_dload_pdf_disabled',
+        'som_cc_email',
+        'som_intro_text',
+        'som_footer_text',
+        'som_title_topic_section',
+        'som_title_button_mail',
+        'som_title_button_pdf',
+        'som_btn_mail_bg',
+        'som_btn_pdf_bg',
+        'som_sel_ind_bg',
+        'som_btn_mail_col',
+        'som_btn_pdf_col',
+        'som_sel_ind_col',
+    );
+    $default_texts = som_get_default_texts();
+
+    if (!empty($data['settings']) && is_array($data['settings'])) 
+    {
+        foreach ($data['settings'] as $key => $val) 
+        {
+            if (!in_array($key, $allowed_settings, true)) continue;
+
+            if (isset($default_texts[$key])) 
+            {
+                $clean = is_string($val) ? sanitize_text_field($val) : '';
+                $val   = ($clean !== '') ? $clean : $default_texts[$key];
+            }
+
+            update_option($key, $val);
+        }
+    }
 
     if (!empty($data['groups'])) 
     {
@@ -229,15 +298,15 @@ function som_options_page_html()
         <form action="options.php" method="post">
             <?php settings_fields('som_plugin_options'); ?>
 
-            <h3>Empfänger-Profile</h3>
-            <p>Hier können Sie mehrere Zieladressen definieren. Der Nutzer wählt im Formular das gewünschte Ziel aus.</p>
+            <h3>Empfänger:in-Profile</h3>
+            <p>Hier können Sie mehrere Zieladressen definieren. Nutzer:innen wählen im Formular das gewünschte Ziel aus.</p>
             
             <table class="widefat" id="som_targets_table">
                 <thead>
                     <tr>
                         <th style="width:20px">ID</th>
-                        <th>Bezeichnung (Label für Nutzer)</th>
-                        <th>E-Mail Empfänger</th>
+                        <th>Bezeichnung (Label für Nutzer:innen)</th>
+                        <th>E-Mail Empfänger:in</th>
                         <th>Betreff</th>
                         <th>Postadresse (für PDF/Mail)</th>
                         <th>Aktion</th>
@@ -264,10 +333,17 @@ function som_options_page_html()
             <h3>Globale Einstellungen</h3>
             <table class="form-table">
                 <tr>
-                    <th scope="row">E-Mail Optional?</th>
+                    <th scope="row">Postadresse optional?</th>
+                    <td>
+                        <input type="checkbox" name="som_addr_optional" value="1" <?php checked(get_option('som_addr_optional'), '1'); ?>>
+                        <p class="description">Wenn aktiviert, müssen Nutzer:innen keine postalische Adresse angeben.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">E-Mail optional?</th>
                     <td>
                         <input type="checkbox" name="som_email_optional" value="1" <?php checked(get_option('som_email_optional'), '1'); ?>>
-                        <p class="description">Wenn aktiviert, muss der Nutzer keine E-Mail Adresse angeben.</p>
+                        <p class="description">Wenn aktiviert, müssen Nutzer:innen keine E-Mail Adresse angeben.</p>
                     </td>
                 </tr>
                 <tr>
@@ -285,22 +361,59 @@ function som_options_page_html()
             <hr>
 
             <h3>Download-Optionen</h3>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">E-Mail Download-Option verstecken?</th>
-                        <td>
-                            <input type="checkbox" name="som_dload_mail_disabled" value="1" <?php checked(get_option('som_dload_mail_disabled'), '1'); ?>>
-                            <p class="description">Wenn aktiviert, ist der Download der E-Mail Vorlage nicht möglich.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">PDF Download-Option verstecken?</th>
-                        <td>
-                            <input type="checkbox" name="som_dload_pdf_disabled" value="1" <?php checked(get_option('som_dload_pdf_disabled'), '1'); ?>>
-                            <p class="description">Wenn aktiviert, ist der Download des PDFs nicht möglich.</p>
-                        </td>
-                    </tr>
-                </table>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">E-Mail Download-Option verstecken?</th>
+                    <td>
+                        <input type="checkbox" name="som_dload_mail_disabled" value="1" <?php checked(get_option('som_dload_mail_disabled'), '1'); ?>>
+                        <p class="description">Wenn aktiviert, ist der Download der E-Mail Vorlage nicht möglich.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">PDF Download-Option verstecken?</th>
+                    <td>
+                        <input type="checkbox" name="som_dload_pdf_disabled" value="1" <?php checked(get_option('som_dload_pdf_disabled'), '1'); ?>>
+                        <p class="description">Wenn aktiviert, ist der Download des PDFs nicht möglich.</p>
+                    </td>
+                </tr>
+            </table>
+
+            <hr>
+
+            <h3>Formulartexte</h3>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Titel Abschnitt Themenauswahl</th>
+                    <td>
+                        <input type="text"
+                               name="som_title_topic_section"
+                               value="<?php echo esc_attr(som_get_text_option('som_title_topic_section')); ?>"
+                               class="regular-text">
+                        <p class="description">Überschrift für die Themenauswahl.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Text Button E-Mail</th>
+                    <td>
+                        <input type="text"
+                               name="som_title_button_mail"
+                               value="<?php echo esc_attr(som_get_text_option('som_title_button_mail')); ?>"
+                               class="regular-text">
+                        <p class="description">Beschriftung des Buttons für den E-Mail Entwurf.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Text Button PDF</th>
+                    <td>
+                        <input type="text"
+                               name="som_title_button_pdf"
+                               value="<?php echo esc_attr(som_get_text_option('som_title_button_pdf')); ?>"
+                               class="regular-text">
+                        <p class="description">Beschriftung des Buttons für das PDF Dokument.</p>
+                    </td>
+                </tr>
+            </table>
+
             <hr>
 
             <h3>Design (Farben)</h3>
@@ -336,7 +449,7 @@ function som_options_page_html()
 
             <hr>
 
-            <?php submit_button(); ?>
+            <?php submit_button('Änderungen sichern'); ?>
         </form>
 
         <script>
@@ -423,13 +536,18 @@ function som_block_builder_shortcode($atts)
         $targets = array(array('label' => 'Standard', 'email' => get_option('admin_email'), 'subject' => 'Einwendung', 'address' => ''));
     }
 
-    $global_settings = 
-    array(
-        'cc'     => get_option('som_cc_email') ?: "", 
-        'intro'  => get_option('som_intro_text') ?: "",
-        'footer' => get_option('som_footer_text') ?: "",
+    $global_settings = array(
+        'cc'        => get_option('som_cc_email') ?: "", 
+        'intro'     => get_option('som_intro_text') ?: "",
+        'footer'    => get_option('som_footer_text') ?: "",
         'email_opt' => get_option('som_email_optional'),
+        'addr_opt'  => get_option('som_addr_optional'),
     );
+
+    // Get customizable texts with defaults
+    $title_topic_section = som_get_text_option('som_title_topic_section');
+    $title_button_mail   = som_get_text_option('som_title_button_mail');
+    $title_button_pdf    = som_get_text_option('som_title_button_pdf');
 
     // Get Colors with defaults
     $btn_mail_color = get_option('som_btn_mail_bg', '#0073aa');
@@ -448,7 +566,7 @@ function som_block_builder_shortcode($atts)
         $block_data[$block->ID] = wpautop($block->post_content);
         $block_titles[$block->ID] = $block->post_title;
 
-        // Pass assigned targets to frontend. If empty, default to 'all' in JS logic logic, or just [] here.
+        // Pass assigned targets to frontend. If empty, default to 'all' in JS logic, or just [] here.
         $assigned = get_post_meta($block->ID, '_som_assigned_targets', true);
         if(!is_array($assigned)) $assigned = null; // null means ALL
         $block->target_ids = $assigned;
@@ -516,8 +634,8 @@ function som_block_builder_shortcode($atts)
         <form id="som-block-form">
             <div class="som-details-section">
                 <div class="som-form-row"><div class="som-field"><label>Vorname <span class="som-req">*</span></label><input type="text" id="som_fname"></div><div class="som-field"><label>Nachname <span class="som-req">*</span></label><input type="text" id="som_lname"></div></div>
-                <div class="som-form-row"><div class="som-field" style="flex:2;"><label>Straße/Hausnummer <span class="som-req">*</span></label><input type="text" id="som_street"></div></div>
-                <div class="som-form-row"><div class="som-field"><label>PLZ <span class="som-req">*</span></label><input type="text" id="som_zip"></div><div class="som-field" style="flex:2;"><label>Ort <span class="som-req">*</span></label><input type="text" id="som_city"></div></div>
+                <div class="som-form-row"><div class="som-field" style="flex:2;"><label>Straße/Hausnummer <?php if(get_option('som_addr_optional') != '1') echo '<span class="som-req">*</span>'; ?></label><input type="text" id="som_street"></div></div>
+                <div class="som-form-row"><div class="som-field"><label>PLZ <?php if(get_option('som_addr_optional') != '1') echo '<span class="som-req">*</span>'; ?></label><input type="text" id="som_zip"></div><div class="som-field" style="flex:2;"><label>Ort <?php if(get_option('som_addr_optional') != '1') echo '<span class="som-req">*</span>'; ?></label><input type="text" id="som_city"></div></div>
                 <div class="som-form-row">
                     <div class="som-field">
                         <label>E-Mail <?php if(get_option('som_email_optional') != '1') echo '<span class="som-req">*</span>'; ?></label>
@@ -542,7 +660,7 @@ function som_block_builder_shortcode($atts)
                 <?php endforeach; ?>
             </div>
 
-            <h3>Themenauswahl zur Einwendung</h3>
+            <h3><?php echo esc_html($title_topic_section); ?></h3>
             <?php foreach ($mandatory_blocks as $block): ?><input type="checkbox" name="som_blocks[]" value="<?php echo $block->ID; ?>" checked style="display:none;"><?php endforeach; ?>
 
             <?php 
@@ -577,8 +695,8 @@ function som_block_builder_shortcode($atts)
             <?php endif; ?>
 
             <div class="som-actions">
-                <button <?php if(get_option('som_dload_mail_disabled') == '1') echo 'style="display: none !important"'; ?> type="button" id="som-draft-btn" class="som-btn som-btn-mail">Einwendung als E-Mail Entwurf</button>
-                <button <?php if(get_option('som_dload_pdf_disabled') == '1') echo 'style="display: none !important"'; ?> type="button" id="som-pdf-btn" class="som-btn som-btn-pdf">Einwendung als PDF Dokument</button>
+                <button <?php if(get_option('som_dload_mail_disabled') == '1') echo 'style="display: none !important"'; ?> type="button" id="som-draft-btn" class="som-btn som-btn-mail"><?php echo esc_html($title_button_mail); ?></button>
+                <button <?php if(get_option('som_dload_pdf_disabled') == '1') echo 'style="display: none !important"'; ?> type="button" id="som-pdf-btn" class="som-btn som-btn-pdf"><?php echo esc_html($title_button_pdf); ?></button>
             </div>
             <div style="font-size: 12px; margin-top: 20px">
                 Hinweis: Daten werden nur im Browser verarbeitet, es werden keine Informationen zentral prozessiert oder gespeichert.
@@ -717,16 +835,14 @@ function som_block_builder_shortcode($atts)
                 var ftEl = document.getElementById('som_free_text');
                 var d = { fname: document.getElementById('som_fname').value.trim(), lname: document.getElementById('som_lname').value.trim(), street: document.getElementById('som_street').value.trim(), zip: document.getElementById('som_zip').value.trim(), city: document.getElementById('som_city').value.trim(), email: document.getElementById('som_email').value.trim(), checks: document.querySelectorAll('input[name="som_blocks[]"]:checked:not([disabled])'), freeText: ftEl ? ftEl.value.trim() : '' };
 
+                var isAddrReq = !(somGlobal.addr_opt === '1');
                 var isEmailReq = !(somGlobal.email_opt === '1');
-
-                if (isEmailReq)
-                {
-                    if(!d.fname || !d.lname || !d.street || !d.zip || !d.city || !d.email) { alert("Bitte füllen Sie alle mit * markierten Felder aus."); return null; }
-                }
-                else
-                {
-                    if(!d.fname || !d.lname || !d.street || !d.zip || !d.city) { alert("Bitte füllen Sie alle mit * markierten Felder aus."); return null; }
-                }
+                
+                var requiredFilled = true;
+                requiredFilled = requiredFilled && !(!d.fname || !d.lname);
+                if (isAddrReq) { requiredFilled = requiredFilled && !(!d.street || !d.zip || !d.city); }
+                if (isEmailReq) { requiredFilled = requiredFilled && !(!d.email); }
+                if (!requiredFilled) { alert("Bitte füllen Sie alle mit * markierten Felder aus."); return null; }
 
                 if(d.checks.length === 0 || d.checks.length < 2) { alert("Bitte wählen sie wenigstens 2 Begründungen aus."); return null; }
                 return d;
